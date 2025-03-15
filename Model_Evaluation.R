@@ -228,7 +228,83 @@ SVM_CV_per_fold_tuning <- function(df, fold_indices, gamma_values, num_folds) {
     mean_accuracy = total_acc / num_folds
   ))
 }
+
+SVM_CV_nested <- function(df, fold_indices, gamma_values, num_folds) {
+  final_loss <- 0
+  best_gamma <- NA
+  for (i in 1:num_folds){
+    
+    best_loss <- Inf
+    test_indices <- fold_indices[[i]]
+    train_data <- df[-test_indices, ]
+    test_data  <- df[test_indices, ]
+    
+    for (gam in gamma_values){
+      
+      loss <- 0
+      
+      inner_fold_indices <- stratified_folds(train_data, "ShotType", 3)
+      for (u in 1:length((inner_fold_indices))){
+        
+        inner_test_indices <- inner_fold_indices[[u]]
+        inner_train_data <- train_data[-inner_test_indices, ]
+        inner_test_data  <- train_data[inner_test_indices, ]
+        
+        y_train_inner <- inner_train_data$ShotType
+        y_test_inner  <- inner_test_data$ShotType
+        
+        inner_train_features <- inner_train_data[, !(names(train_data) == "ShotType")]
+        inner_test_features  <- inner_test_data[, !(names(test_data) == "ShotType")]
+        
+        dummies_model <- dummyVars(~ ., data = inner_train_features, fullRank = TRUE)
+        X_train_inner <- predict(dummies_model, newdata = inner_train_features)
+        X_test_inner  <- predict(dummies_model, newdata = inner_test_features, na.action = na.pass)
+        
+        scaler <- preProcess(X_train_inner, method = c("center", "scale"))
+        X_train_scaled_inner <- predict(scaler, X_train_inner)
+        X_test_scaled_inner  <- predict(scaler, X_test_inner)
+        
+        svm_model <- svm(x = X_train_scaled_inner, y = y_train_inner,
+                         probability = TRUE, kernel = "radial", gamma = gam)
+        
+        pred <- predict(svm_model, newdata = X_test_scaled_inner, probability = TRUE)
+        probs <- attr(pred, "probabilities")
+        
+        loss <- loss + log_loss(probs, y_test_inner)
+      }
+      if (loss < best_loss){
+        best_loss <- loss
+        best_gamma <- gam
+      }
+    }
+    
+    y_train <- train_data$ShotType
+    y_test  <- test_data$ShotType
+    
+    train_features <- train_data[ , !(names(train_data) == "ShotType")]
+    test_features  <- test_data[ , !(names(test_data) == "ShotType")]
+    
+    
+    dummies_model <- dummyVars(~ ., data = train_features, fullRank = TRUE)
+    
+    X_train <- predict(dummies_model, newdata = train_features)
+    X_test  <- predict(dummies_model, newdata = test_features, na.action = na.pass)
+    
+    scaler <- preProcess(X_train, method = c("center", "scale"))
+    X_train_scaled <- predict(scaler, X_train)
+    X_test_scaled  <- predict(scaler, X_test)
+    
+    svm_model <- svm(x = X_train_scaled, y = y_train, 
+                     probability = TRUE, kernel = "radial", gamma=best_gamma)
+    
+    svm_pred <- predict(svm_model, newdata = X_test_scaled, probability = TRUE)
+    svm_probs <- attr(svm_pred, "probabilities")
+    
+    final_loss <- final_loss + log_loss(svm_probs, y_test)
+  }
+  return(final_loss / num_folds)
+}
 rets <- SVM_CV_flat(df, fold_indices, gamma_values, 5)
 rets2 <- SVM_CV_per_fold_tuning(df, fold_indices, gamma_values, 5)
-
-rets2
+rets3 <- SVM_CV_nested(df, fold_indices, gamma_values, 5)
+rets3
