@@ -7,7 +7,6 @@ library(e1071)
 library(glue)
 set.seed(42)
 df <- read.csv("dataset.csv", sep=";", header=TRUE)
-df <- df[sample(nrow(df)), ]
 X <- df[, !(names(df) %in% c("ShotType"))]
 y <- df["ShotType"]
 
@@ -51,69 +50,6 @@ baseline_classifier_probabilities <- function(probabilities, n=1){
   return(probability_matrix)
 }
 
-train_i <- as.integer(nrow(df)*0.8)
-test_i <- train_i + 1
-#LOGISTIC REGRESSION#
-df$ShotType <- as.factor(df$ShotType)
-train_data <- df[1:train_i,]
-test_data <- df[test_i:nrow(df),]
-
-model <- multinom(ShotType ~ ., family = multinomial, data = train_data)
-
-prediction_probabilities <- predict(model, newdata = test_data, type = "probs")
-prediction_labels <- predict(model, newdata = test_data, type = "class")
-
-log_loss(prediction_probabilities, test_data$ShotType)
-accuracy(prediction_labels, test_data$ShotType)
-
-baseline_probs <- train_baseline_classifier(train_data$ShotType)
-baseline_prediction_probabilities <- baseline_classifier_probabilities(baseline_probs, nrow(test_data))
-baseline_prediction_labels <- predict_baseline_classifier(baseline_probs, nrow(test_data))
-
-log_loss(baseline_prediction_probabilities, test_data$ShotType)
-accuracy(baseline_prediction_labels, test_data$ShotType)
-
-###TESTING KNN
-y_train <- train_data$ShotType
-y_test  <- test_data$ShotType
-
-train_features <- train_data[ , !(names(train_data) == "ShotType")]
-test_features  <- test_data[ , !(names(test_data) == "ShotType")]
-
-
-dummies_model <- dummyVars(~ ., data = train_features, fullRank = TRUE)
-
-# Apply to both sets
-X_train <- predict(dummies_model, newdata = train_features)
-X_test  <- predict(dummies_model, newdata = test_features, na.action = na.pass)
-
-scaler <- preProcess(X_train, method = c("center", "scale"))
-X_train_scaled <- predict(scaler, X_train)
-X_test_scaled  <- predict(scaler, X_test)
-
-knn_model <- knn3(x = X_train_scaled, y = y_train, k = 100)
-probabilities_knn <- predict(knn_model, X_test, type="prob")
-labels_knn <- predict(knn_model, X_test_scaled, type="class")
-
-log_loss(probabilities_knn, y_test)
-accuracy(labels_knn, y_test)
-
-head(probabilities_knn)
-
-svm_model <- svm(x = X_train_scaled, y = y_train, 
-                 probability = TRUE, kernel = "radial", gamma=0.5)  # or "linear", etc.
-
-# 4. Predict probabilities
-svm_pred <- predict(svm_model, newdata = X_test_scaled, probability = TRUE)
-svm_probs <- attr(svm_pred, "probabilities")
-
-# 5. Evaluate
-log_loss(svm_probs, y_test)
-accuracy(svm_pred, y_test)
-
-unique(df$ShotType)
-
-
 stratified_folds <- function(data, target_column, k=5){
   y <- data[[target_column]]
   labels <-  unique(y)
@@ -127,6 +63,14 @@ stratified_folds <- function(data, target_column, k=5){
     }
   }
   return(folds)
+}
+
+test_train_split <- function(data, train_size = 0.8){
+  train_indices <- sample(1:nrow(data), size = floor(train_size * nrow(data)))
+  
+  train_set <- data[train_indices, ]
+  test_set <- data[-train_indices,]
+  return(list(train = train_set, test = test_set))
 }
 
 num_folds <- 5
@@ -164,38 +108,127 @@ for (i in 1:num_folds){
   print(glue("Log loss:{log_loss(prediction_probabilities, test_data$ShotType)}"))
   print(glue("Accuracy: {accuracy(prediction_labels, test_data$ShotType)}"))
 }
-for (i in 1:num_folds){
-  df$ShotType <- as.factor(df$ShotType)
-  test_indices <- fold_indices[[i]]
-  
-  train_data <- df[-test_indices,]
-  test_data <- df[test_indices,]
-  
-  y_train <- train_data$ShotType
-  y_test  <- test_data$ShotType
-  
-  train_features <- train_data[ , !(names(train_data) == "ShotType")]
-  test_features  <- test_data[ , !(names(test_data) == "ShotType")]
-  
-  
-  dummies_model <- dummyVars(~ ., data = train_features, fullRank = TRUE)
 
-  X_train <- predict(dummies_model, newdata = train_features)
-  X_test  <- predict(dummies_model, newdata = test_features, na.action = na.pass)
-  
-  scaler <- preProcess(X_train, method = c("center", "scale"))
-  X_train_scaled <- predict(scaler, X_train)
-  X_test_scaled  <- predict(scaler, X_test)
-  
-  svm_model <- svm(x = X_train_scaled, y = y_train, 
-                   probability = TRUE, kernel = "radial", gamma=0.5)
 
-  svm_pred <- predict(svm_model, newdata = X_test_scaled, probability = TRUE)
-  svm_probs <- attr(svm_pred, "probabilities")
-  
-  print(glue("Log loss: {log_loss(svm_probs, y_test)}"))
-  print(glue("Accuracy: {accuracy(svm_pred, y_test)}"))
+gamma_values <- c(0.0001, 0.001, 0.01, 0.1, 1)
+#This function finds the best gamma value over all folds BUT
+#evaluates on the test set.
+SVM_CV_flat <- function(df, fold_indices, gamma_values, num_folds){
+  best_gamma <- NA
+  best_loss <- Inf
+  acc_for_best_loss <- 0
+  for (gam in gamma_values){
+    loss <- 0
+    acc <- 0
+    print(glue("Testing gamma: {gam}"))
+    for (i in 1:num_folds){
+      
+      df$ShotType <- as.factor(df$ShotType)
+      test_indices <- fold_indices[[i]]
+      
+      train_data <- df[-test_indices,]
+      test_data <- df[test_indices,]
+      
+      y_train <- train_data$ShotType
+      y_test  <- test_data$ShotType
+      
+      train_features <- train_data[ , !(names(train_data) == "ShotType")]
+      test_features  <- test_data[ , !(names(test_data) == "ShotType")]
+      
+      
+      dummies_model <- dummyVars(~ ., data = train_features, fullRank = TRUE)
+      
+      X_train <- predict(dummies_model, newdata = train_features)
+      X_test  <- predict(dummies_model, newdata = test_features, na.action = na.pass)
+      
+      scaler <- preProcess(X_train, method = c("center", "scale"))
+      X_train_scaled <- predict(scaler, X_train)
+      X_test_scaled  <- predict(scaler, X_test)
+      
+      svm_model <- svm(x = X_train_scaled, y = y_train, 
+                       probability = TRUE, kernel = "radial", gamma=gam)
+      
+      svm_pred <- predict(svm_model, newdata = X_test_scaled, probability = TRUE)
+      svm_probs <- attr(svm_pred, "probabilities")
+      
+      loss <- loss + log_loss(svm_probs, y_test)
+      acc <- acc + accuracy(svm_pred, y_test)
+    }
+    if (loss < best_loss){
+      best_loss <- loss
+      best_gamma <- gam
+      acc_for_best_loss <- acc
+    }
+  }
+return(list(loss = best_loss / num_folds, accuracy = acc_for_best_loss / num_folds,
+            gamma = best_gamma))
 }
 
+#This function finds the best parameter for each fold evaluated on the train set
+#I think this is the way to go for part 1, but who knows at this point.
+SVM_CV_per_fold_tuning <- function(df, fold_indices, gamma_values, num_folds) {
+  total_loss <- 0
+  total_acc <- 0
+  
+  df$ShotType <- as.factor(df$ShotType)
+  
+  for (i in 1:num_folds) {
+    
+    test_indices <- fold_indices[[i]]
+    train_data <- df[-test_indices, ]
+    test_data  <- df[test_indices, ]
 
+    y_train <- train_data$ShotType
+    y_test  <- test_data$ShotType
+    
+    train_features <- train_data[, !(names(train_data) == "ShotType")]
+    test_features  <- test_data[, !(names(test_data) == "ShotType")]
+    
+    dummies_model <- dummyVars(~ ., data = train_features, fullRank = TRUE)
+    X_train <- predict(dummies_model, newdata = train_features)
+    X_test  <- predict(dummies_model, newdata = test_features, na.action = na.pass)
+    
+    scaler <- preProcess(X_train, method = c("center", "scale"))
+    X_train_scaled <- predict(scaler, X_train)
+    X_test_scaled  <- predict(scaler, X_test)
+    
+    best_gamma <- NA
+    best_fold_loss <- Inf
+    
+    for (gam in gamma_values) {
+      svm_model <- svm(x = X_train_scaled, y = y_train,
+                              probability = TRUE, kernel = "radial", gamma = gam)
+      
+      pred <- predict(svm_model, newdata = X_train_scaled, probability = TRUE)
+      probs <- attr(pred, "probabilities")
 
+      fold_loss <- log_loss(probs, y_train)
+      
+      if (fold_loss < best_fold_loss) {
+        best_fold_loss <- fold_loss
+        best_gamma <- gam
+      }
+    }
+    
+    final_model <- svm(x = X_train_scaled, y = y_train,
+                              probability = TRUE, kernel = "radial", gamma = best_gamma)
+    
+    final_preds <- predict(final_model, newdata = X_test_scaled, probability = TRUE)
+    final_probs <- attr(final_preds, "probabilities")
+    
+    fold_loss <- log_loss(final_probs, y_test)
+    fold_acc <- accuracy(final_preds, y_test)
+    
+    total_loss <- total_loss + fold_loss
+    total_acc <- total_acc + fold_acc
+  }
+  
+  return(list(
+    mean_log_loss = total_loss / num_folds,
+    mean_accuracy = total_acc / num_folds
+  ))
+}
+rets <- SVM_CV_flat(df, fold_indices, gamma_values, 5)
+rets2 <- SVM_CV_per_fold_tuning(df, fold_indices, gamma_values, 5)
+
+rets2
