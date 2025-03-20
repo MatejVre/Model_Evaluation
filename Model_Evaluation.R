@@ -86,9 +86,10 @@ baseline_CV_evaluation <- function(df, fold_indices){
   accs <- c()
   err_vector <- c()
   
-  for (i in 1:num_folds){
+  for (i in 1:length(fold_indices)){
     df$ShotType <- as.factor(df$ShotType)
     
+    test_indices <- fold_indices[[i]]
     train_data <- df[-test_indices,]
     test_data <- df[test_indices,]
     
@@ -116,7 +117,7 @@ LR_CV_evaluation <- function(df, fold_indices){
   accs <- c()
   err_vector <- c()
   
-  for (i in 1:num_folds){
+  for (i in 1:length(fold_indices)){
     df$ShotType <- as.factor(df$ShotType)
     
     test_indices <- fold_indices[[i]]
@@ -357,6 +358,26 @@ SVM_CV_nested <- function(df, fold_indices, gamma_values) {
 #rets2 <- SVM_CV_per_fold_tuning(df, fold_indices, gamma_values)
 #rets3 <- SVM_CV_nested(df, fold_indices, gamma_values, 5)
 
+bootstrap_uncertainty <- function(error_vector){
+  means <- c()
+  for (i in 1:1000){
+    bootstrap_sample <- sample(error_vector, length(error_vector), replace = TRUE)
+    bootstrap_mean <- mean(bootstrap_sample)
+    means <- c(means, bootstrap_mean)
+  }
+  return(sd(means))
+}
+
+report_metrics <- function(evals_list){
+  
+  glue("Log loss: ", evals_list[["log_loss"]],
+       " +/- ",
+       bootstrap_uncertainty(evals_list[["loss_vector"]]),
+       "\n",
+       "Accuracy: ", evals_list[["accuracy"]],
+       "+/-",
+       bootstrap_uncertainty(evals_list[["acc_error_vec"]]))
+}
 
 set.seed(42)
 num_folds <- 5
@@ -364,7 +385,10 @@ fold_indices <- stratified_folds(df, "ShotType", k=num_folds)
 
 evals_baseline <- baseline_CV_evaluation(df, fold_indices)
 evals_LR <- LR_CV_evaluation(df, fold_indices)
-evals_SVM_training_fold <- SVM_CV_per_fold_tuning(df, fold_indices, gamma_values)
-evals_SVM_nested <- SVM_CV_nested(df, fold_indices, gamma_values)
+#evals_SVM_training_fold <- SVM_CV_per_fold_tuning(df, fold_indices, gamma_values)
+#evals_SVM_nested <- SVM_CV_nested(df, fold_indices, gamma_values)
 
-
+report_metrics(evals_baseline)
+report_metrics(evals_LR)
+report_metrics(evals_SVM_training_fold)
+report_metrics(evals_SVM_nested)
