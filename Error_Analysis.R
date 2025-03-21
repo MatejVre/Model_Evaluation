@@ -65,5 +65,5 @@ data_weights <- table(df$Competition)/nrow(df)
 
 weights <- c("NBA"= 0.6, "U14"=0.1, "U16"=0.1, "SLO1"=0.1, "EURO"=0.1)
 data_weights["NBA"]
-a <- weights["NBA"]/data_weights["NBA"]
-a * data_weights["NBA"]
+weights["NBA"]/data_weights["NBA"]
+

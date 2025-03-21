@@ -389,6 +389,7 @@ CT_CV_per_fold_tuning <- function(df, fold_indices, cps){
       probs <- predict(tree_model, newdata = train_data, type="prob")
       
       fold_loss <- log_loss(probs, train_data$ShotType)[[1]]
+      #print(accuracy(pred, train_data$ShotType)[["accuracy"]])
       
       if (fold_loss < best_fold_loss) {
         best_fold_loss <- fold_loss
@@ -497,7 +498,7 @@ report_metrics <- function(evals_list){
        bootstrap_uncertainty(evals_list[["loss_vector"]]),
        "\n",
        "Accuracy: ", evals_list[["accuracy"]],
-       " +/ -",
+       " +/- ",
        bootstrap_uncertainty(evals_list[["acc_error_vec"]]))
 }
 
