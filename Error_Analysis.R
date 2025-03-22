@@ -68,7 +68,7 @@ grid.arrange(p1, p2, p3, p4, nrow = 2, ncol = 2)
 far_away_shots_df <- df %>% filter(Distance >= 5)
 
 df$Group <- "All Shots"
-far_away_shots_df$Group <- "Far Away"
+far_away_shots_df$Group <- "Further than 5m"
 
 combined_df <- rbind(df, far_away_shots_df)
 
@@ -82,7 +82,8 @@ ggplot(normalized_df, aes(x = ShotType, y = prop, fill = Group)) +
   geom_bar(stat = "identity", position = "dodge") +
   labs(x = "Shot Type", y = "Proportion"
   ) +
-  scale_y_continuous(labels = scales::percent_format())
+  scale_y_continuous(labels = scales::percent_format()) +
+  theme(legend.position = c(0.9,0.9))
 
 ################################################################################
 #CORRECTLY WEIGHING THE DATA
@@ -118,5 +119,17 @@ get_weighted_accuracy(weighted_df, evals_LR)
 get_weighted_accuracy(weighted_df, evals_tree_training_fold)
 get_weighted_accuracy(weighted_df, evals_tree_nested)
 
+test <- weighted_df
+test$Loss <- evals_tree_training_fold[["loss_vector"]]
+test$WeightedError <- test$Weight*test$Loss
+bootstrap_uncertainty(test$WeightedError)
+
 #About bootstrap. There are two ways to think about it, do normal bootstrap, which will likely return
-#higher uncertainty. However, weighted bootstrap should work fine.
+#higher uncertainty. However, weighted bootstrap should return smaller uncertainty. Should the uncertainty
+#for "artificially" changing the distribution be the same as the original one, or should it be higher?
+#Who knows
+
+
+
+
+

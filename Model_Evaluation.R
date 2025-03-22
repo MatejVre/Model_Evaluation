@@ -22,15 +22,16 @@ df %>% group_by(df$ShotType) %>% summarize(count=n())
 # TODO b/a weighs
 
 #LOG-LOSS
-log_loss <- function(probabilities, y_true){
-  losses <- c()
-  N <-  length(y_true)
-  for (i in 1:N){
-    probability <- probabilities[i, as.character(y_true[i])]
-    probability <- max(probability, 1e-15)
-    loss <- loss - (1/N) * log(probability)
-    losses <- c(losses, loss)
+log_loss <- function(probabilities, y_true) {
+  N <- length(y_true)
+  losses <- numeric(N)
+  
+  for (i in 1:N) {
+    p <- probabilities[i, as.character(y_true[i])]
+    p <- max(p, 1e-15)  # avoid log(0)
+    losses[i] <- -log(p)
   }
+  
   return(list(log_loss = mean(losses), loss_vector = losses))
 }
 
@@ -58,6 +59,7 @@ baseline_classifier_probabilities <- function(probabilities, n=1){
 }
 
 stratified_folds <- function(data, target_column, k=10){
+  set.seed(42)
   y <- data[[target_column]]
   labels <-  unique(y)
   folds <-  vector("list", length = k)
@@ -120,14 +122,14 @@ LR_CV_evaluation <- function(df, fold_indices){
   err_vector <- c()
   
   for (i in 1:length(fold_indices)){
-    df$ShotType <- as.factor(df$ShotType)
+    #df$ShotType <- as.factor(df$ShotType)
     
     test_indices <- fold_indices[[i]]
     
     train_data <- df[-test_indices,]
     test_data <- df[test_indices,]
     
-    model <- multinom(ShotType ~ ., family = multinomial, data = train_data, trace = FALSE)
+    model <- multinom(ShotType ~ .,data = train_data, trace = FALSE)
     
     prediction_probabilities <- predict(model, newdata = test_data, type = "probs")
     prediction_labels <- predict(model, newdata = test_data, type = "class")
@@ -135,10 +137,11 @@ LR_CV_evaluation <- function(df, fold_indices){
     loss_list <- log_loss(prediction_probabilities, test_data$ShotType)
     acc_list <- accuracy(prediction_labels, test_data$ShotType)
     
-    losses <- c(losses, loss_list[[1]])
-    accs <- c(accs, acc_list[[1]])
-    loss_vector <- c(loss_vector, loss_list[[2]])
-    err_vector <- c(err_vector, acc_list[[2]])
+    losses <- c(losses, loss_list[["log_loss"]])
+    print(losses)
+    accs <- c(accs, acc_list[["accuracy"]])
+    loss_vector <- c(loss_vector, loss_list[["loss_vector"]])
+    err_vector <- c(err_vector, acc_list[["err_vector"]])
   }
   
   evals <- list(log_loss = mean(losses), loss_vector = loss_vector, accuracy = mean(accs), acc_error_vec = err_vector)
@@ -437,7 +440,7 @@ CT_CV_nested <- function(df, fold_indices, cps){
       
       loss <- 0
       
-      inner_fold_indices <- stratified_folds(train_data, "ShotType", 3)
+      inner_fold_indices <- stratified_folds(train_data, "ShotType", 5)
       for (u in 1:length(inner_fold_indices)){
         
         inner_test_indices <- inner_fold_indices[[u]]
@@ -482,6 +485,7 @@ CT_CV_nested <- function(df, fold_indices, cps){
 
 
 bootstrap_uncertainty <- function(error_vector){
+  set.seed(42)
   means <- c()
   for (i in 1:1000){
     bootstrap_sample <- sample(error_vector, length(error_vector), replace = TRUE)
@@ -503,7 +507,7 @@ report_metrics <- function(evals_list){
 }
 
 set.seed(42)
-num_folds <- 5
+num_folds <- 10
 fold_indices <- stratified_folds(df, "ShotType", k=num_folds)
 
 evals_baseline <- baseline_CV_evaluation(df, fold_indices)
