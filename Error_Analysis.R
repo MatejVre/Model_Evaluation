@@ -1,18 +1,42 @@
 library(ggplot2)
 library(gridExtra)
 indices <- c()
-
+################################################################################
+#ANALYSIS OF ERRORS BASED ON DISTANCE
+################################################################################
+indices <- c()#if this isn't set before the for loop is ran everything breaks
 for (indice_vec in fold_indices){
   indices <- c(indices, indice_vec)
 }
 
 ordered_distances <- df[indices, "Distance"]
 
-cor(ordered_distances, evals_baseline[["loss_vector"]])
-cor(ordered_distances, evals_LR[["loss_vector"]])
-cor(ordered_distances, evals_tree_training_fold[["loss_vector"]])
-cor(ordered_distances, evals_tree_nested[["loss_vector"]])
-#Correlation shows that there is a negative relationship between distance and log loss
+correlation_bootstrap <- function(distances, evals_list, n=1000){
+  set.seed(42)#set seed so all 4 function calls work with the same samples
+  corrs <- c()
+  for (i in 1:n){
+    indices <- sample(1:length(distances), length(distances), replace=TRUE)
+    d <- distances[c(indices)]
+    errs <- evals_list[["loss_vector"]][c(indices)]
+    corrs <- c(corrs, cor(d, errs))
+  }
+  return(sd(corrs))
+}
+report_correlation <- function(distances, evals_list, name){
+  glue(
+    name,
+    " correlation with distance: ",
+    cor(distances, evals_list[["loss_vector"]]),
+    " +/- ",
+    correlation_bootstrap(distances, evals_list)
+  )
+}
+
+report_correlation(ordered_distances, evals_baseline, "Baseline")
+report_correlation(ordered_distances, evals_LR, "Logistic Regression")
+report_correlation(ordered_distances, evals_tree_training_fold, "Tree - optimized training fold")
+report_correlation(ordered_distances, evals_tree_nested, "Tree - nested CV")
+
 create_loss_plot <- function(evals_list, title, color){
   tree_nested_df <- data.frame(
     Distance = ordered_distances,
@@ -59,11 +83,40 @@ ggplot(normalized_df, aes(x = ShotType, y = prop, fill = Group)) +
   labs(x = "Shot Type", y = "Proportion"
   ) +
   scale_y_continuous(labels = scales::percent_format())
+
+################################################################################
+#CORRECTLY WEIGHING THE DATA
+################################################################################
+#look at the piece of paper for proof
+weighted_df <- read.csv("dataset.csv", sep=";", header=TRUE)
+weighted_df <- weighted_df[indices, ]
+weighted_df$Weight <- weights[weighted_df$Competition]/data_weights[weighted_df$Competition]
+
+get_weighted_loss <- function(df, evals_list){
+  temp <- df
+  temp$Loss <- evals_list[["loss_vector"]]
   
+  weighted_avg_loss <- sum(temp$Weight * temp$Loss) / sum(temp$Weight)
+  return(weighted_avg_loss)
+}
 
-data_weights <- table(df$Competition)/nrow(df)
+get_weighted_accuracy <- function(df, evals_list){
+  temp <- df
+  temp$Accuracy <- evals_list[["acc_error_vec"]]
+  
+  weighted_avg_accuracy <- sum(temp$Weight * temp$Accuracy) / sum(temp$Weight)
+  return(weighted_avg_accuracy)
+}
 
-weights <- c("NBA"= 0.6, "U14"=0.1, "U16"=0.1, "SLO1"=0.1, "EURO"=0.1)
-data_weights["NBA"]
-weights["NBA"]/data_weights["NBA"]
+get_weighted_loss(weighted_df, evals_baseline)
+get_weighted_loss(weighted_df, evals_LR)
+get_weighted_loss(weighted_df, evals_tree_training_fold)
+get_weighted_loss(weighted_df, evals_tree_nested)
 
+get_weighted_accuracy(weighted_df, evals_baseline)
+get_weighted_accuracy(weighted_df, evals_LR)
+get_weighted_accuracy(weighted_df, evals_tree_training_fold)
+get_weighted_accuracy(weighted_df, evals_tree_nested)
+
+#About bootstrap. There are two ways to think about it, do normal bootstrap, which will likely return
+#higher uncertainty. However, weighted bootstrap should work fine.

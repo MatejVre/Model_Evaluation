@@ -57,7 +57,7 @@ baseline_classifier_probabilities <- function(probabilities, n=1){
   return(probability_matrix)
 }
 
-stratified_folds <- function(data, target_column, k=5){
+stratified_folds <- function(data, target_column, k=10){
   y <- data[[target_column]]
   labels <-  unique(y)
   folds <-  vector("list", length = k)
