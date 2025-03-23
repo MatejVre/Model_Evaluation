@@ -28,6 +28,7 @@ correlation_bootstrap <- function(distances, evals_list, n=1000){
   }
   return(sd(corrs))
 }
+
 report_correlation <- function(distances, evals_list, name){
   glue(
     name,
@@ -155,7 +156,6 @@ reweight_bootstrap <- function(df, weights, err) {
   return(sd(means))
 }
 
-
 get_weighted_loss(weighted_df, evals_baseline)
 get_weighted_loss(weighted_df, evals_LR)
 get_weighted_loss(weighted_df, evals_tree_training_fold)
@@ -165,9 +165,4 @@ get_weighted_accuracy(weighted_df, evals_baseline)
 get_weighted_accuracy(weighted_df, evals_LR)
 get_weighted_accuracy(weighted_df, evals_tree_training_fold)
 get_weighted_accuracy(weighted_df, evals_tree_nested)
-
-test <- weighted_df
-test$Loss <- evals_tree_training_fold[["loss_vector"]]
-test$WeightedError <- test$Weight*test$Loss
-bootstrap_uncertainty(test$WeightedError)
 
