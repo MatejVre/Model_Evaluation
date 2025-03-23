@@ -1,6 +1,12 @@
-library(ggplot2)
-library(gridExtra)
-indices <- c()
+library("dplyr")
+library("VGAM")
+library("nnet")
+library(caret)
+library(class)
+library(e1071)
+library(glue)
+library(rpart)
+
 ################################################################################
 #ANALYSIS OF ERRORS BASED ON DISTANCE
 ################################################################################
@@ -47,11 +53,13 @@ create_loss_plot <- function(evals_list, title, color){
   
   test_df <- tree_nested_df %>% group_by(Distance_rounded)%>%
     summarise(mean_loss = mean(Evals.loss_vector), se = sd(Evals.loss_vector) / sqrt(n()))
+  print(head(test_df))
   
   ggplot(test_df, aes(x=Distance_rounded, y=mean_loss)) +
     geom_bar(stat="identity", fill=color) + 
     geom_errorbar(aes(ymin = mean_loss - se, ymax = mean_loss + se), width = 0.2, color="black") +
-    labs(x = "Rounded Distance", y = "Average Log Loss", title=title)
+    labs(x = "Rounded Distance", y = "Average Log Loss", title=title) +
+    ylim(0,4)
 }
 
 p1 <- create_loss_plot(evals_baseline, "Baseline", "#1b9e77")
@@ -88,26 +96,65 @@ ggplot(normalized_df, aes(x = ShotType, y = prop, fill = Group)) +
 ################################################################################
 #CORRECTLY WEIGHING THE DATA
 ################################################################################
-#look at the piece of paper for proof
+#look at the piece of paper for proof*(or the report now that it's written)
 weighted_df <- read.csv("dataset.csv", sep=";", header=TRUE)
 weighted_df <- weighted_df[indices, ]
+data_weights <- prop.table(table(weighted_df$Competition))
 weighted_df$Weight <- weights[weighted_df$Competition]/data_weights[weighted_df$Competition]
 
 get_weighted_loss <- function(df, evals_list){
   temp <- df
   temp$Loss <- evals_list[["loss_vector"]]
   
-  weighted_avg_loss <- sum(temp$Weight * temp$Loss) / sum(temp$Weight)
-  return(weighted_avg_loss)
+  weighted_avg_loss <- weighted.mean(temp$Loss, temp$Weight)
+  err <- reweight_bootstrap(temp, weights, "Loss")
+  glue(
+    "Log loss: ",
+    weighted_avg_loss,
+    " +/- ",
+    err
+  )
 }
 
 get_weighted_accuracy <- function(df, evals_list){
   temp <- df
   temp$Accuracy <- evals_list[["acc_error_vec"]]
   
-  weighted_avg_accuracy <- sum(temp$Weight * temp$Accuracy) / sum(temp$Weight)
-  return(weighted_avg_accuracy)
+  weighted_avg_accuracy <- weighted.mean(temp$Accuracy, temp$Weight)
+  err <- reweight_bootstrap(temp, weights, "Accuracy")
+  glue(
+    "Log loss: ",
+    weighted_avg_accuracy,
+    " +/- ",
+    err
+  )
 }
+
+
+#About bootstrap. There are two ways to think about it, do normal bootstrap, which will likely return
+#higher uncertainty. However, weighted bootstrap should return smaller uncertainty. Should the uncertainty
+#for "artificially" changing the distribution be the same as the original one, or should it be higher?
+#Who knows. OR WE DO IT THE THIRD WAY AND WE SAMPLE AND THEN ADJUST THE WEIGHTS.
+
+reweight_bootstrap <- function(df, weights, err) {
+  means <- c()
+  set.seed(42)
+  
+  for (i in 1:1000) {
+    bootstrap_indices <- sample(1:nrow(df), nrow(df), replace = TRUE)
+    sample_df <- df[bootstrap_indices, ]
+    
+    sample_competitions <- sample_df$Competition
+    d_weights <- prop.table(table(sample_competitions))
+    
+    sample_df$NWeights <- weights[sample_df$Competition] / d_weights[sample_df$Competition]
+    mean_loss <- weighted.mean(sample_df[[err]], sample_df$NWeights)
+    means <- c(means, mean_loss)
+  }
+  
+  return(sd(means))
+}
+
 
 get_weighted_loss(weighted_df, evals_baseline)
 get_weighted_loss(weighted_df, evals_LR)
@@ -123,13 +170,4 @@ test <- weighted_df
 test$Loss <- evals_tree_training_fold[["loss_vector"]]
 test$WeightedError <- test$Weight*test$Loss
 bootstrap_uncertainty(test$WeightedError)
-
-#About bootstrap. There are two ways to think about it, do normal bootstrap, which will likely return
-#higher uncertainty. However, weighted bootstrap should return smaller uncertainty. Should the uncertainty
-#for "artificially" changing the distribution be the same as the original one, or should it be higher?
-#Who knows
-
-
-
-
 

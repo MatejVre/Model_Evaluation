@@ -138,7 +138,6 @@ LR_CV_evaluation <- function(df, fold_indices){
     acc_list <- accuracy(prediction_labels, test_data$ShotType)
     
     losses <- c(losses, loss_list[["log_loss"]])
-    print(losses)
     accs <- c(accs, acc_list[["accuracy"]])
     loss_vector <- c(loss_vector, loss_list[["loss_vector"]])
     err_vector <- c(err_vector, acc_list[["err_vector"]])
@@ -399,7 +398,7 @@ CT_CV_per_fold_tuning <- function(df, fold_indices, cps){
         best_cp <- cp
       }
     }
-    
+    print(best_cp)
     final_model <- rpart(ShotType ~ ., data = train_data, method="class",
                          control = rpart.control(maxdepth=best_cp, cp=0))
     
@@ -440,7 +439,7 @@ CT_CV_nested <- function(df, fold_indices, cps){
       
       loss <- 0
       
-      inner_fold_indices <- stratified_folds(train_data, "ShotType", 5)
+      inner_fold_indices <- stratified_folds(train_data, "ShotType", 7)
       for (u in 1:length(inner_fold_indices)){
         
         inner_test_indices <- inner_fold_indices[[u]]
@@ -463,7 +462,7 @@ CT_CV_nested <- function(df, fold_indices, cps){
         best_cp <- cp
       }
     }
-    
+    print(best_cp)
     tree_model <- rpart(ShotType ~ ., data = train_data, method="class",
                         control = rpart.control(maxdepth=best_cp, cp=0))
     
@@ -519,7 +518,6 @@ evals_tree_nested <- CT_CV_nested(df, fold_indices, depths)
 
 report_metrics(evals_baseline)
 report_metrics(evals_LR)
-#report_metrics(evals_SVM_training_fold)
 report_metrics(evals_tree_training_fold)
 report_metrics(evals_tree_nested)
 
